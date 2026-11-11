@@ -1,0 +1,171 @@
+import { Palette } from "std-widgets.slint";
+
+// One battery: an earbud, the case, or a whole pair of headphones.
+export struct CellData {
+    // "left", "right", "case" or "main"; picks the outline.
+    kind: string,
+    label: string,
+    // False while the level has not been reported yet.
+    known: bool,
+    percent: int,
+    charging: bool,
+    low: bool,
+}
+
+export struct OtherDevice {
+    name: string,
+    levels: string,
+}
+
+// Ten segments: earbuds report their charge in steps of 10 %.
+component Meter inherits HorizontalLayout {
+    in property <int> filled;
+    in property <bool> low;
+
+    height: 4px;
+    spacing: 2px;
+
+    for index in 10: Rectangle {
+        background: index < root.filled
+            ? (root.low ? #c42b1c : Palette.accent-background)
+            : Palette.foreground.with-alpha(0.16);
+    }
+}
+
+component Outline inherits Path {
+    in property <string> kind;
+
+    width: 32px;
+    height: 32px;
+    viewbox-width: 32;
+    viewbox-height: 32;
+    stroke: Palette.foreground.with-alpha(0.6);
+    stroke-width: 1.5px;
+    commands: kind == "left" ? "M 20 11 L 20 24 A 3 3 0 0 1 14 24 L 14 17.93 A 7 7 0 1 1 20 11 Z"
+        : kind == "right" ? "M 12 11 L 12 24 A 3 3 0 0 0 18 24 L 18 17.93 A 7 7 0 1 0 12 11 Z"
+        : kind == "case" ? "M 11 6 H 21 A 6 6 0 0 1 27 12 V 20 A 6 6 0 0 1 21 26 H 11 A 6 6 0 0 1 5 20 V 12 A 6 6 0 0 1 11 6 Z M 5 13 H 27 M 15 18 A 1 1 0 1 0 17 18 A 1 1 0 1 0 15 18 Z"
+        : "M 7 18 V 15 A 9 9 0 0 1 25 15 V 18 M 6.5 18 H 7.5 A 2.5 2.5 0 0 1 10 20.5 V 24.5 A 2.5 2.5 0 0 1 7.5 27 H 6.5 A 2.5 2.5 0 0 1 4 24.5 V 20.5 A 2.5 2.5 0 0 1 6.5 18 Z M 24.5 18 H 25.5 A 2.5 2.5 0 0 1 28 20.5 V 24.5 A 2.5 2.5 0 0 1 25.5 27 H 24.5 A 2.5 2.5 0 0 1 22 24.5 V 20.5 A 2.5 2.5 0 0 1 24.5 18 Z";
+}
+
+component Cell inherits VerticalLayout {
+    in property <CellData> data;
+
+    spacing: 8px;
+    alignment: start;
+
+    HorizontalLayout {
+        alignment: start;
+        Outline {
+            kind: root.data.kind;
+        }
+    }
+
+    Text {
+        text: root.data.known ? root.data.percent + "%" : "—";
+        color: root.data.known ? Palette.foreground : Palette.foreground.with-alpha(0.45);
+        font-size: 28px;
+    }
+
+    Meter {
+        filled: root.data.known ? round(root.data.percent / 10) : 0;
+        low: root.data.low;
+    }
+
+    Text {
+        text: root.data.charging ? root.data.label + " · charging" : root.data.label;
+        color: Palette.foreground.with-alpha(0.6);
+        font-size: 12px;
+    }
+}
+
+export component AppWindow inherits Window {
+    in property <bool> has-device;
+    in property <string> device-name;
+    in property <string> device-age;
+    in property <[CellData]> cells;
+    in property <[OtherDevice]> others;
+    in property <string> empty-title;
+    in property <string> empty-hint;
+
+    // The panel has one width, like the flyout of the Windows application.
+    out property <length> panel-width: 360px;
+
+    title: "btManage";
+    width: root.panel-width;
+    background: Palette.background;
+    default-font-size: 14px;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 16px;
+        alignment: start;
+
+        if root.has-device: HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: root.device-name;
+                font-weight: 600;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+
+            Text {
+                text: root.device-age;
+                color: Palette.foreground.with-alpha(0.6);
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+
+        if root.has-device: HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+            // Three equal columns, also when headphones fill only the first.
+            for cell in root.cells: Cell {
+                data: cell;
+                width: (root.panel-width - 2 * 16px - 2 * 12px) / 3;
+            }
+        }
+
+        if root.has-device && root.others.length > 0: VerticalLayout {
+            Rectangle {
+                height: 1px;
+                background: Palette.foreground.with-alpha(0.1);
+            }
+
+            for other in root.others: HorizontalLayout {
+                height: 36px;
+                spacing: 12px;
+                Text {
+                    text: other.name;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: other.levels;
+                    color: Palette.foreground.with-alpha(0.6);
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        if !root.has-device: VerticalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 4px;
+            Text {
+                text: root.empty-title;
+                font-weight: 600;
+            }
+
+            Text {
+                text: root.empty-hint;
+                color: Palette.foreground.with-alpha(0.6);
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

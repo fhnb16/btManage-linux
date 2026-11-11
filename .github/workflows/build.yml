@@ -1,0 +1,159 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: Branch, tag or commit of btManage-core to build against (default branch if empty)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    # btManage-core is private. Pull requests from forks do not get its token, so they are skipped.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest images on offer: the binary then runs on any distribution with glibc 2.35 or newer.
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    env:
+      HAS_CORE_TOKEN: ${{ secrets.CORE_REPO_TOKEN != '' }}
+    steps:
+      - name: Require the core token
+        if: env.HAS_CORE_TOKEN != 'true'
+        run: |
+          echo "::error::Secret CORE_REPO_TOKEN is not set. Add a fine-grained token with read access to the contents of btManage-core (Settings, Secrets and variables, Actions)."
+          exit 1
+
+      # The two repositories sit side by side, as on a developer machine.
+      - uses: actions/checkout@v7
+        with:
+          path: btManage-linux
+
+      - name: Check out the core
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/btManage-core
+          ref: ${{ inputs.core_ref }}
+          token: ${{ secrets.CORE_REPO_TOKEN }}
+          path: btManage-core
+
+      - name: Record the core revision
+        run: echo "Built against btManage-core \`$(git -C btManage-core rev-parse HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libfontconfig1-dev libfreetype6-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libgl1-mesa-dev libegl1-mesa-dev \
+            libdbus-1-dev
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: btManage-linux
+
+      - name: Format
+        working-directory: btManage-linux
+        run: cargo fmt --check
+
+      - name: Lint
+        working-directory: btManage-linux
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        working-directory: btManage-linux
+        run: cargo test --locked
+
+      - name: Build
+        working-directory: btManage-linux
+        run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          mkdir -p dist/btmanage
+          cp btManage-linux/target/release/btmanage dist/btmanage/
+          cp btManage-linux/assets/btmanage.desktop btManage-linux/LICENSE dist/btmanage/
+          tar -C dist -czf btmanage-linux-${{ matrix.arch }}.tar.gz btmanage
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: btManage-linux-${{ matrix.arch }}
+          path: btmanage-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  # The interface also runs on Windows, in demo mode, so it can be looked at without a Linux
+  # machine. This keeps that path building.
+  windows-preview:
+    name: Windows preview
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-latest
+    env:
+      HAS_CORE_TOKEN: ${{ secrets.CORE_REPO_TOKEN != '' }}
+    steps:
+      - name: Require the core token
+        if: env.HAS_CORE_TOKEN != 'true'
+        shell: bash
+        run: |
+          echo "::error::Secret CORE_REPO_TOKEN is not set."
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          path: btManage-linux
+
+      - name: Check out the core
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/btManage-core
+          ref: ${{ inputs.core_ref }}
+          token: ${{ secrets.CORE_REPO_TOKEN }}
+          path: btManage-core
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: btManage-linux
+
+      - name: Build
+        working-directory: btManage-linux
+        run: cargo build --release --locked
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: btManage-linux-preview-windows
+          path: btManage-linux/target/release/btmanage.exe
+          if-no-files-found: error

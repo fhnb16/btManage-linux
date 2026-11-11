@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=btManage
+Comment=Battery levels of wireless earbuds in the tray
+Comment[ru]=Заряд беспроводных наушников в трее
+Exec=btmanage
+Icon=audio-headphones
+Categories=Utility;AudioVideo;
+Keywords=bluetooth;airpods;battery;headphones;
+StartupNotify=false
