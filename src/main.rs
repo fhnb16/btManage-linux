@@ -11,6 +11,7 @@
 mod demo;
 #[cfg(target_os = "linux")]
 mod tray;
+mod update;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -56,12 +57,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tick();
     timer.start(slint::TimerMode::Repeated, Duration::from_secs(1), tick);
 
+    check_for_update(&window);
+
     #[cfg(target_os = "linux")]
     let _tray = spawn_tray(&window);
 
     window.show()?;
     slint::run_event_loop_until_quit()?;
     Ok(())
+}
+
+/// Looks for a newer release in the background and, if there is one, shows a
+/// line under the devices that opens the release page.
+fn check_for_update(window: &AppWindow) {
+    let weak = window.as_weak();
+    std::thread::spawn(move || {
+        let Some(found) = update::check() else {
+            return;
+        };
+        let _ = weak.upgrade_in_event_loop(move |window| {
+            window.set_update_text(format!("Version {} is available", found.version).into());
+            window.on_open_update(move || {
+                let _ = webbrowser::open(&found.url);
+            });
+        });
+    });
 }
 
 /// Starts the tray icon. Without a tray host the application still runs, as

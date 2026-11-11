@@ -86,6 +86,9 @@ export component AppWindow inherits Window {
     in property <[OtherDevice]> others;
     in property <string> empty-title;
     in property <string> empty-hint;
+    // Set when a newer release exists: "Version 1.2.3 is available".
+    in property <string> update-text;
+    callback open-update();
 
     // The panel has one width, like the flyout of the Windows application.
     out property <length> panel-width: 360px;
@@ -165,6 +168,28 @@ export component AppWindow inherits Window {
                 color: Palette.foreground.with-alpha(0.6);
                 font-size: 12px;
                 wrap: word-wrap;
+            }
+        }
+        if root.update-text != "": VerticalLayout {
+            spacing: 12px;
+            Rectangle {
+                height: 1px;
+                background: Palette.foreground.with-alpha(0.1);
+            }
+
+            update-link := TouchArea {
+                height: 20px;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.open-update();
+                }
+                Text {
+                    width: 100%;
+                    text: root.update-text;
+                    vertical-alignment: center;
+                    color: update-link.has-hover ? Palette.foreground : Palette.foreground.with-alpha(0.6);
+                    font-size: 12px;
+                }
             }
         }
     }
