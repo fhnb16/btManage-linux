@@ -14,6 +14,7 @@ The maintainer has no Linux machine. The crate therefore also builds on Windows,
 - **Logic that every platform needs goes into the core**, not here.
 - Tooling is Rust only. No Python or Node.
 - Do not commit or push unless asked. The maintainer does that.
+- **Raise the version with every change that ships**, as `major.minor.patch`: patch for a fix, minor for a new capability, major for a break. The version is `version` in `Cargo.toml`; builds run with `--locked`, so the `btmanage-linux` entry in `Cargo.lock` must carry the same number. When the core's version changes, its entry in this `Cargo.lock` changes with it. CI adds a fourth number by itself only when the same version is built again.
 - The release file name `btmanage-linux-<arch>.tar.gz` is a contract with the updater (`src/update.rs`).
 - Say plainly what has not been run on Linux. Most of this repository has only ever been compiled there, in CI.
 

@@ -1,7 +1,7 @@
 [package]
 name = "btmanage-linux"
 description = "btManage for Linux: tray icon and battery panel for wireless earbuds"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 publish = false
