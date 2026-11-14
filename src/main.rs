@@ -9,6 +9,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod demo;
+mod share;
 #[cfg(target_os = "linux")]
 mod tray;
 mod update;
@@ -58,6 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     timer.start(slint::TimerMode::Repeated, Duration::from_secs(1), tick);
 
     check_for_update(&window);
+    // Files and text with other btManage applications on the network.
+    let _sharing = share::start(&window);
 
     #[cfg(target_os = "linux")]
     let _tray = spawn_tray(&window);

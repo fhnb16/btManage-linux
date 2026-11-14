@@ -1,4 +1,4 @@
-import { Palette } from "std-widgets.slint";
+import { Palette, Button, CheckBox, LineEdit } from "std-widgets.slint";
 
 // One battery: an earbud, the case, or a whole pair of headphones.
 export struct CellData {
@@ -89,6 +89,21 @@ export component AppWindow inherits Window {
     // Set when a newer release exists: "Version 1.2.3 is available".
     in property <string> update-text;
     callback open-update();
+
+    // Sharing with other btManage applications on the local network.
+    in property <string> share-status;
+    // "name · platform · address", one per device heard.
+    in property <[string]> share-peers;
+    // What was sent and received, newest first.
+    in property <[string]> share-history;
+    in-out property <bool> share-receive;
+    in-out property <string> share-target;
+    in-out property <string> share-text;
+    in-out property <string> share-file;
+    callback share-receive-toggled(bool);
+    callback share-pick-peer(int);
+    callback share-send-text();
+    callback share-send-file();
 
     // The panel has one width, like the flyout of the Windows application.
     out property <length> panel-width: 360px;
@@ -190,6 +205,90 @@ export component AppWindow inherits Window {
                     color: update-link.has-hover ? Palette.foreground : Palette.foreground.with-alpha(0.6);
                     font-size: 12px;
                 }
+            }
+        }
+
+        // Files and text to and from other devices with btManage on the same network.
+        VerticalLayout {
+            spacing: 8px;
+            Rectangle {
+                height: 1px;
+                background: Palette.foreground.with-alpha(0.1);
+            }
+
+            Text {
+                text: "Sharing";
+                font-weight: 600;
+            }
+
+            Text {
+                text: root.share-status;
+                color: Palette.foreground.with-alpha(0.6);
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+
+            CheckBox {
+                text: "Take files and text from other devices";
+                checked <=> root.share-receive;
+                toggled => {
+                    root.share-receive-toggled(self.checked);
+                }
+            }
+
+            for peer[index] in root.share-peers: TouchArea {
+                height: 28px;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.share-pick-peer(index);
+                }
+                Text {
+                    width: 100%;
+                    text: peer;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    color: parent.has-hover ? Palette.accent-background : Palette.foreground;
+                }
+            }
+
+            LineEdit {
+                placeholder-text: "Address, as ip:port";
+                text <=> root.share-target;
+            }
+
+            LineEdit {
+                placeholder-text: "Text";
+                text <=> root.share-text;
+            }
+
+            LineEdit {
+                placeholder-text: "Path of a file";
+                text <=> root.share-file;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Button {
+                    text: "Send text";
+                    clicked => {
+                        root.share-send-text();
+                    }
+                }
+
+                Button {
+                    text: "Send file";
+                    clicked => {
+                        root.share-send-file();
+                    }
+                }
+            }
+
+            for line in root.share-history: Text {
+                text: line;
+                font-size: 12px;
+                wrap: word-wrap;
+                color: Palette.foreground.with-alpha(0.8);
             }
         }
     }

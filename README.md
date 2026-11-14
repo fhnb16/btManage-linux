@@ -4,6 +4,8 @@ A tray application that shows the battery levels of Bluetooth devices. Written i
 
 **Status: skeleton.** The window, the tray icon, the link to the core and the check for updates are in place. Scanning through BlueZ is not, so real devices do not show up yet; `--demo` shows the interface with made-up data. What is planned is in [TODO.md](TODO.md).
 
+Sharing with other btManage applications on the same network works through the core's `btmanage-share`, as on Windows and Android: the panel lists the devices heard, sends text, and sends a file given by its path. Received files go to `~/Downloads/btManage`. Not tried on Linux yet.
+
 ## Build
 
 Needs Rust (stable) and the btManage-core repository checked out next to this one:
