@@ -554,7 +554,7 @@ dependencies = [
 
 [[package]]
 name = "btmanage-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -562,11 +562,12 @@ dependencies = [
 
 [[package]]
 name = "btmanage-linux"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "btmanage-core",
  "btmanage-share",
  "ksni",
+ "serde_json",
  "slint",
  "slint-build",
  "ureq",
@@ -575,7 +576,7 @@ dependencies = [
 
 [[package]]
 name = "btmanage-share"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",

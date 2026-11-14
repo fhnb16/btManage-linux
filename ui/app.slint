@@ -14,7 +14,10 @@ export struct CellData {
 
 export struct OtherDevice {
     name: string,
+    // "Connected · Left 90%, Right 70%"
     levels: string,
+    // The text of its button, "Connect" or "Disconnect"; empty for none.
+    action: string,
 }
 
 // Ten segments: earbuds report their charge in steps of 10 %.
@@ -89,6 +92,8 @@ export component AppWindow inherits Window {
     // Set when a newer release exists: "Version 1.2.3 is available".
     in property <string> update-text;
     callback open-update();
+    // The button of a device on the list was pressed; its place on the list.
+    callback device-action(int);
 
     // Sharing with other btManage applications on the local network.
     in property <string> share-status;
@@ -100,6 +105,10 @@ export component AppWindow inherits Window {
     in-out property <string> share-target;
     in-out property <string> share-text;
     in-out property <string> share-file;
+    // The code another device types in to pair with this one, "482 913".
+    in property <string> share-code;
+    in-out property <string> share-pair-code;
+    callback share-pair();
     callback share-receive-toggled(bool);
     callback share-pick-peer(int);
     callback share-send-text();
@@ -145,26 +154,37 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.has-device && root.others.length > 0: VerticalLayout {
+        if root.others.length > 0: VerticalLayout {
             Rectangle {
                 height: 1px;
                 background: Palette.foreground.with-alpha(0.1);
             }
 
-            for other in root.others: HorizontalLayout {
-                height: 36px;
+            for other[index] in root.others: HorizontalLayout {
+                padding-top: 6px;
+                padding-bottom: 6px;
                 spacing: 12px;
-                Text {
-                    text: other.name;
-                    vertical-alignment: center;
-                    overflow: elide;
+                VerticalLayout {
                     horizontal-stretch: 1;
+                    alignment: center;
+                    Text {
+                        text: other.name;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: other.levels;
+                        color: Palette.foreground.with-alpha(0.6);
+                        font-size: 12px;
+                        overflow: elide;
+                    }
                 }
 
-                Text {
-                    text: other.levels;
-                    color: Palette.foreground.with-alpha(0.6);
-                    vertical-alignment: center;
+                if other.action != "": Button {
+                    text: other.action;
+                    clicked => {
+                        root.device-action(index);
+                    }
                 }
             }
         }
@@ -229,10 +249,33 @@ export component AppWindow inherits Window {
             }
 
             CheckBox {
-                text: "Take files and text from other devices";
+                text: "Take files and text from paired devices";
                 checked <=> root.share-receive;
                 toggled => {
                     root.share-receive-toggled(self.checked);
+                }
+            }
+
+            // The code of this computer: typed in on another device, it pairs the two.
+            VerticalLayout {
+                spacing: 2px;
+                Text {
+                    text: "Pairing code";
+                    color: Palette.foreground.with-alpha(0.6);
+                    font-size: 12px;
+                }
+
+                Text {
+                    text: root.share-code;
+                    font-size: 28px;
+                    font-weight: 600;
+                }
+
+                Text {
+                    text: "Type it in on the other device to pair the two. Nothing is encrypted yet";
+                    color: Palette.foreground.with-alpha(0.6);
+                    font-size: 12px;
+                    wrap: word-wrap;
                 }
             }
 
@@ -254,6 +297,23 @@ export component AppWindow inherits Window {
             LineEdit {
                 placeholder-text: "Address, as ip:port";
                 text <=> root.share-target;
+            }
+
+            // Pairing with the device above: the code it shows.
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    placeholder-text: "Its pairing code";
+                    text <=> root.share-pair-code;
+                    horizontal-stretch: 1;
+                }
+
+                Button {
+                    text: "Pair";
+                    clicked => {
+                        root.share-pair();
+                    }
+                }
             }
 
             LineEdit {

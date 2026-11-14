@@ -4,7 +4,7 @@ Guidance for anyone, human or AI, changing this repository.
 
 ## What this is
 
-The Linux client of btManage: one Rust binary with a Slint interface and a StatusNotifierItem tray icon. It uses `btmanage-core` directly, as a path dependency on `../btManage-core`. It is a skeleton: BlueZ scanning is not written yet.
+The Linux client of btManage: one Rust binary with a Slint interface and a StatusNotifierItem tray icon. It uses `btmanage-core` and `btmanage-share` directly, as path dependencies on `../btManage-core`. Devices come from BlueZ through the system's `busctl` and `bluetoothctl` (`src/bluez.rs`), into the core's hub; none of it has been run on Linux yet.
 
 The maintainer has no Linux machine. The crate therefore also builds on Windows, where it runs in demo mode. Keep that working: it is how the interface is looked at.
 
@@ -35,5 +35,6 @@ The Linux-only modules do not compile on Windows. To type-check one without a Li
 
 ## Where things go
 
-- BlueZ: a module that reads paired devices and advertisements over D-Bus and feeds a `btmanage_core::Hub`. The application still drives the older `Tracker`; moving to the hub is the first step.
+- BlueZ: `src/bluez.rs`. `busctl --json` gives every object BlueZ keeps; the reading of it is plain Rust and tested on every platform, the processes run on Linux only. A D-Bus library would be better, but adding a crate needs `cargo` to write the lock file; with it at hand, `zbus` is the next step, and its signals would replace the polling.
+- Sharing with other btManage: `src/share.rs`, over the core's `btmanage-share`.
 - New window content: properties on `AppWindow` in `ui/app.slint`, filled in `render` in `src/main.rs`.

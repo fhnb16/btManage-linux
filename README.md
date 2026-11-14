@@ -2,9 +2,11 @@
 
 A tray application that shows the battery levels of Bluetooth devices. Written in Rust with [Slint](https://slint.dev).
 
-**Status: skeleton.** The window, the tray icon, the link to the core and the check for updates are in place. Scanning through BlueZ is not, so real devices do not show up yet; `--demo` shows the interface with made-up data. What is planned is in [TODO.md](TODO.md).
+**Status: written, not yet run on Linux.** The devices come from BlueZ: the paired ones with the battery BlueZ reads from them, and the levels AirPods and Fast Pair earbuds broadcast, merged by the core as on Windows and Android. The earbuds in use are shown at the top with each battery; the other devices are listed under them, with a button to connect or disconnect the paired ones. `--demo` shows the interface with made-up data. What is planned is in [TODO.md](TODO.md).
 
-Sharing with other btManage applications on the same network works through the core's `btmanage-share`, as on Windows and Android: the panel lists the devices heard, sends text, and sends a file given by its path. Received files go to `~/Downloads/btManage`. Not tried on Linux yet.
+BlueZ is reached through the system's own `busctl` and `bluetoothctl`, which every distribution with BlueZ has; the application keeps a discovery running while it is open.
+
+Sharing with other btManage applications on the same network works through the core's `btmanage-share`, as on Windows and Android: the panel shows the pairing code of this computer, pairs with another device by its code, lists the devices heard, sends text, and sends a file given by its path. Items come only from paired devices. Received files go to `~/Downloads/btManage`.
 
 ## Build
 

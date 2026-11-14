@@ -1,11 +1,17 @@
 # To do: Linux
 
-## First: real devices
+## First: run 0.3.0 on Linux
 
-- Move from the single-model `Tracker` to `btmanage_core::Hub`, as the Windows and Android clients have.
-- BlueZ over D-Bus: paired devices with name, address, class, connection state; the `org.bluez.Battery1` interface for their levels; advertisement monitoring for manufacturer and service data.
-- Connect, disconnect and remove devices through BlueZ.
+Written without a Linux machine: the hub, BlueZ through `busctl` and `bluetoothctl` (`src/bluez.rs`), the buttons to connect and disconnect, sharing with pairing. To try: the paired devices show with the battery BlueZ has; AirPods in use show each bud and the case; the button connects and disconnects; a discovery that runs all the time does not disturb the sound of headphones in use (if it does, scan only while the window is open); sharing with a phone, paired by code.
+
+The reading of `busctl --json` is tested against a sample written from BlueZ's description, not against a capture. If the devices do not show, the output of `busctl --system --json=short call org.bluez / org.freedesktop.DBus.ObjectManager GetManagedObjects` is what to send.
+
+## Devices
+
+- Remove a pairing from the application (`Adapter1.RemoveDevice`).
 - Keep what the hub remembers in `$XDG_STATE_HOME/btmanage`.
+- `zbus` in place of the processes, with the property signals of BlueZ instead of polling every two seconds. Needs `cargo` at hand to add the crate to the lock file.
+- Pairing a new device from the application: BlueZ's agent interface.
 
 ## Interface
 

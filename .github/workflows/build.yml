@@ -40,6 +40,22 @@ jobs:
         with:
           path: btManage-linux
 
+      # A push whose code is not formatted gets a commit with the formatting. rustfmt is
+      # called on the files directly: cargo fmt would want the core, which is not here.
+      # Pull before the next push.
+      - name: Format
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        working-directory: btManage-linux
+        run: |
+          rustfmt --edition 2024 $(git ls-files '*.rs')
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --all --message "Format with rustfmt"
+            git push
+            echo "::notice::The code was formatted with rustfmt and the result pushed. Pull before the next push."
+          fi
+
       - name: Choose and reserve the version
         id: version
         env:
@@ -175,9 +191,16 @@ jobs:
         with:
           workspaces: btManage-linux
 
+      # A push was formatted and committed back by the prepare job; this build is of the
+      # commit before that, so it formats its own copy. Pull requests only check.
       - name: Format
         working-directory: btManage-linux
-        run: cargo fmt --check
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF_TYPE" == branch ]]; then
+            cargo fmt
+          else
+            cargo fmt --check
+          fi
 
       - name: Lint
         working-directory: btManage-linux
