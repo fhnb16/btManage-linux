@@ -51,7 +51,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |time| u64::try_from(time.as_millis()).unwrap_or(u64::MAX))
+        .map_or(0, |time| {
+            u64::try_from(time.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -173,7 +175,10 @@ fn toggle_connection(paths: &Paths, id: &str, on: bool) {
     };
     std::thread::spawn(move || {
         if !bluez::connect(&path, on) {
-            eprintln!("btmanage: BlueZ refused to {} {path}", if on { "connect" } else { "disconnect" });
+            eprintln!(
+                "btmanage: BlueZ refused to {} {path}",
+                if on { "connect" } else { "disconnect" }
+            );
         }
     });
 }

@@ -112,44 +112,52 @@ pub fn start(window: &AppWindow) -> Option<Sharing> {
     let timer = slint::Timer::default();
     let weak = window.as_weak();
     let polled = Rc::clone(&share);
-    timer.start(slint::TimerMode::Repeated, Duration::from_secs(1), move || {
-        let Some(window) = weak.upgrade() else {
-            return;
-        };
-        // Six digits, read out across a room: in two groups of three.
-        let code = polled.code();
-        let shown = if code.len() == 6 {
-            format!("{} {}", &code[..3], &code[3..])
-        } else {
-            code
-        };
-        window.set_share_code(shown.into());
+    timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_secs(1),
+        move || {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+            // Six digits, read out across a room: in two groups of three.
+            let code = polled.code();
+            let shown = if code.len() == 6 {
+                format!("{} {}", &code[..3], &code[3..])
+            } else {
+                code
+            };
+            window.set_share_code(shown.into());
 
-        let peers = polled.peers();
-        *addresses.borrow_mut() = peers.iter().map(|peer| peer.address.clone()).collect();
-        let lines: Vec<SharedString> = peers
-            .iter()
-            .map(|peer| {
-                let state = if peer.trusted { "paired" } else { "not paired" };
-                format!("{} · {} · {state}", peer.name, peer.platform).into()
-            })
-            .collect();
-        window.set_share_peers(ModelRc::new(VecModel::from(lines)));
+            let peers = polled.peers();
+            *addresses.borrow_mut() = peers.iter().map(|peer| peer.address.clone()).collect();
+            let lines: Vec<SharedString> = peers
+                .iter()
+                .map(|peer| {
+                    let state = if peer.trusted { "paired" } else { "not paired" };
+                    format!("{} · {} · {state}", peer.name, peer.platform).into()
+                })
+                .collect();
+            window.set_share_peers(ModelRc::new(VecModel::from(lines)));
 
-        let events = polled.take_events();
-        if events.iter().any(|event| matches!(event, Event::Paired { .. })) {
-            save_trusted(&polled.trusted());
-        }
-        if !events.is_empty() {
-            let mut history = history.borrow_mut();
-            for event in &events {
-                history.insert(0, describe(event));
+            let events = polled.take_events();
+            if events
+                .iter()
+                .any(|event| matches!(event, Event::Paired { .. }))
+            {
+                save_trusted(&polled.trusted());
             }
-            history.truncate(HISTORY);
-            let rows: Vec<SharedString> = history.iter().map(|line| line.as_str().into()).collect();
-            window.set_share_history(ModelRc::new(VecModel::from(rows)));
-        }
-    });
+            if !events.is_empty() {
+                let mut history = history.borrow_mut();
+                for event in &events {
+                    history.insert(0, describe(event));
+                }
+                history.truncate(HISTORY);
+                let rows: Vec<SharedString> =
+                    history.iter().map(|line| line.as_str().into()).collect();
+                window.set_share_history(ModelRc::new(VecModel::from(rows)));
+            }
+        },
+    );
 
     Some(Sharing {
         _share: share,
@@ -161,7 +169,11 @@ pub fn start(window: &AppWindow) -> Option<Sharing> {
 fn describe(event: &Event) -> String {
     match event {
         Event::Received {
-            from, kind, name, text, ..
+            from,
+            kind,
+            name,
+            text,
+            ..
         } => match kind {
             Kind::Text => format!("Text from {from}: {}", text.as_deref().unwrap_or_default()),
             Kind::File | Kind::Pair => format!("{name} from {from}"),
@@ -175,7 +187,9 @@ fn describe(event: &Event) -> String {
             needs_pairing: true,
             ..
         } => format!("Not sent to {to}: pair with its code first"),
-        Event::Failed { to, name, error, .. } => format!("Not sent, {name} {to}: {error}"),
+        Event::Failed {
+            to, name, error, ..
+        } => format!("Not sent, {name} {to}: {error}"),
         Event::Paired { name, .. } => format!("Paired with {name}"),
     }
 }
@@ -188,7 +202,12 @@ fn trusted_file() -> PathBuf {
 /// The paired devices kept from earlier runs, an identifier a line.
 fn load_trusted() -> Vec<String> {
     fs::read_to_string(trusted_file())
-        .map(|text| text.lines().map(str::to_owned).filter(|id| !id.is_empty()).collect())
+        .map(|text| {
+            text.lines()
+                .map(str::to_owned)
+                .filter(|id| !id.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
