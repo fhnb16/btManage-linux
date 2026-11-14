@@ -83,7 +83,13 @@ fn device(path: &str, interfaces: &Value) -> Option<Found> {
     };
     let services = property(properties, "UUIDs")
         .and_then(Value::as_array)
-        .map(|uuids| uuids.iter().filter_map(Value::as_str).filter_map(short_uuid).collect())
+        .map(|uuids| {
+            uuids
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(short_uuid)
+                .collect()
+        })
         .unwrap_or_default();
     let (vendor_source, vendor_id, product_id) = property(properties, "Modalias")
         .and_then(Value::as_str)
@@ -195,7 +201,10 @@ pub fn feed(hub: &mut Hub, found: &[Found], seen: &mut HashMap<String, (i16, Vec
             }
             seen.insert(key, (rssi, data.clone()));
             let advertisement = if manufacturer {
-                Advertisement::Manufacturer { company_id: id, data }
+                Advertisement::Manufacturer {
+                    company_id: id,
+                    data,
+                }
             } else {
                 Advertisement::ServiceData { uuid: id, data }
             };
@@ -271,7 +280,14 @@ mod system {
     pub fn connect(path: &str, on: bool) -> bool {
         let method = if on { "Connect" } else { "Disconnect" };
         Command::new("busctl")
-            .args(["--system", "call", "org.bluez", path, "org.bluez.Device1", method])
+            .args([
+                "--system",
+                "call",
+                "org.bluez",
+                path,
+                "org.bluez.Device1",
+                method,
+            ])
             .status()
             .is_ok_and(|status| status.success())
     }
@@ -370,7 +386,10 @@ mod tests {
     fn modalias_and_uuids_are_read() {
         assert_eq!(modalias("usb:v05ACp024Fd0100"), Some((2, 0x05AC, 0x024F)));
         assert_eq!(modalias("nonsense"), None);
-        assert_eq!(short_uuid("0000FE2C-0000-1000-8000-00805F9B34FB"), Some(0xFE2C));
+        assert_eq!(
+            short_uuid("0000FE2C-0000-1000-8000-00805F9B34FB"),
+            Some(0xFE2C)
+        );
         assert_eq!(short_uuid("74ec2172-0bad-4d01-8f77-997b2be0722a"), None);
     }
 }
