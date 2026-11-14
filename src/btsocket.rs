@@ -115,14 +115,8 @@ mod linux {
 
     pub fn recv(fd: &OwnedFd, buffer: &mut [u8]) -> io::Result<usize> {
         // SAFETY: the buffer is valid for its length.
-        let received = unsafe {
-            libc::recv(
-                fd.as_raw_fd(),
-                buffer.as_mut_ptr().cast(),
-                buffer.len(),
-                0,
-            )
-        };
+        let received =
+            unsafe { libc::recv(fd.as_raw_fd(), buffer.as_mut_ptr().cast(), buffer.len(), 0) };
         usize::try_from(received).map_err(|_| io::Error::last_os_error())
     }
 
@@ -191,7 +185,10 @@ impl Socket {
 
 #[cfg(not(target_os = "linux"))]
 fn unsupported() -> io::Error {
-    io::Error::new(io::ErrorKind::Unsupported, "Bluetooth channels are opened on Linux only")
+    io::Error::new(
+        io::ErrorKind::Unsupported,
+        "Bluetooth channels are opened on Linux only",
+    )
 }
 
 #[cfg(test)]
@@ -200,6 +197,9 @@ mod tests {
 
     #[test]
     fn addresses_go_least_significant_byte_first() {
-        assert_eq!(bdaddr(0x80AF_1919_B477), [0x77, 0xB4, 0x19, 0x19, 0xAF, 0x80]);
+        assert_eq!(
+            bdaddr(0x80AF_1919_B477),
+            [0x77, 0xB4, 0x19, 0x19, 0xAF, 0x80]
+        );
     }
 }

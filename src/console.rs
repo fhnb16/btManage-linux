@@ -122,7 +122,10 @@ fn templates() -> Vec<Template> {
             "AAP: adaptive",
             &aap::noise_command(aap::NoiseMode::Adaptive),
         ),
-        accessory("AAP: noise control off", &aap::noise_command(aap::NoiseMode::Off)),
+        accessory(
+            "AAP: noise control off",
+            &aap::noise_command(aap::NoiseMode::Off),
+        ),
     ]
 }
 
@@ -241,7 +244,9 @@ pub fn open(holder: &Rc<RefCell<Option<ConsoleWindow>>>, hub: &SharedHub, paths:
     window.on_subscribe(wire(|console, window| console.gatt(window, true)));
     window.on_clear(wire(|_, window| window.set_output(SharedString::new())));
     window.on_refresh_devices(wire(Console::fill_devices));
-    window.on_way_changed(wire_index(&console, |console, window, _| console.show_way(window)));
+    window.on_way_changed(wire_index(&console, |console, window, _| {
+        console.show_way(window)
+    }));
     window.on_template_picked(wire_index(&console, Console::apply_template));
     window.on_characteristic_picked(wire_index(&console, |console, window, index| {
         let session = lock(&console.session);
@@ -321,14 +326,21 @@ impl Console {
     }
 
     fn way_templates(&self, way: Way) -> Vec<&Template> {
-        self.templates.iter().filter(|item| item.way == way).collect()
+        self.templates
+            .iter()
+            .filter(|item| item.way == way)
+            .collect()
     }
 
     /// The fields for the way chosen: its ready commands, and where it goes.
     fn show_way(&self, window: &ConsoleWindow) {
         let way = Way::from_index(window.get_way_index());
         let mut labels: Vec<SharedString> = vec!["None".into()];
-        labels.extend(self.way_templates(way).iter().map(|item| SharedString::from(item.label)));
+        labels.extend(
+            self.way_templates(way)
+                .iter()
+                .map(|item| SharedString::from(item.label)),
+        );
         window.set_templates(ModelRc::new(VecModel::from(labels)));
         window.set_template_index(0);
         window.set_target(
@@ -392,7 +404,9 @@ impl Console {
                     }
                     std::thread::sleep(Duration::from_secs(1));
                 }
-                log.line("No characteristics: the device offers none, or BlueZ has not resolved them");
+                log.line(
+                    "No characteristics: the device offers none, or BlueZ has not resolved them",
+                );
             });
             return;
         }
@@ -470,7 +484,8 @@ impl Console {
     /// The characteristic named in the field, among those of the device.
     fn characteristic(&self, window: &ConsoleWindow) -> Option<String> {
         let Some(uuid) = full_uuid(&window.get_target()) else {
-            self.log.line("Characteristic: four hex digits such as 2A19, or a full UUID");
+            self.log
+                .line("Characteristic: four hex digits such as 2A19, or a full UUID");
             return None;
         };
         let path = lock(&self.session)
@@ -529,7 +544,9 @@ impl Console {
         let log = self.log.clone();
         if subscribe {
             let lines = log.clone();
-            match Notify::start(&path, move |line| lines.line(format!("bluetoothctl: {line}"))) {
+            match Notify::start(&path, move |line| {
+                lines.line(format!("bluetoothctl: {line}"))
+            }) {
                 Ok(notify) => {
                     lock(&self.session).notify.push(notify);
                     log.line(format!("Subscribed to {name}"));
@@ -558,7 +575,10 @@ fn full_uuid(text: &str) -> Option<String> {
 
 /// "2A19" for a UUID on the Bluetooth base, the whole UUID for any other.
 fn short(uuid: &str) -> String {
-    match uuid.strip_prefix("0000").and_then(|rest| rest.strip_suffix(BASE_UUID_TAIL)) {
+    match uuid
+        .strip_prefix("0000")
+        .and_then(|rest| rest.strip_suffix(BASE_UUID_TAIL))
+    {
         Some(short) if short.len() == 4 => short.to_uppercase(),
         _ => uuid.to_owned(),
     }
@@ -642,7 +662,10 @@ mod preview {
     pub struct Notify;
 
     impl Notify {
-        pub fn start(_path: &str, _line: impl Fn(String) + Send + 'static) -> Result<Notify, String> {
+        pub fn start(
+            _path: &str,
+            _line: impl Fn(String) + Send + 'static,
+        ) -> Result<Notify, String> {
             Err(ONLY.to_owned())
         }
     }

@@ -279,10 +279,13 @@ fn render(window: &AppWindow, snapshot: &HubSnapshot, view: &mut View) {
         .iter()
         .find(|device| (device.connected || device.nearby) && !device.cells.is_empty());
 
-    let modes = featured.map(|device| device.noise_modes.clone()).unwrap_or_default();
+    let modes = featured
+        .map(|device| device.noise_modes.clone())
+        .unwrap_or_default();
     let mode = featured.and_then(|device| device.noise_mode);
     if modes != view.noise_modes {
-        let labels: Vec<SharedString> = modes.iter().map(|mode| noise_label(*mode).into()).collect();
+        let labels: Vec<SharedString> =
+            modes.iter().map(|mode| noise_label(*mode).into()).collect();
         window.set_noise_modes(ModelRc::new(VecModel::from(labels)));
         view.noise_modes = modes;
         view.noise_shown = None;
