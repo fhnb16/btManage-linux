@@ -6,6 +6,14 @@ Written without a Linux machine: the hub, BlueZ through `busctl` and `bluetoothc
 
 The reading of `busctl --json` is tested against a sample written from BlueZ's description, not against a capture. If the devices do not show, the output of `busctl --system --json=short call org.bluez / org.freedesktop.DBus.ObjectManager GetManagedObjects` is what to send.
 
+## Then: AAP and the console of 0.4.0
+
+Written without a Linux machine. To try:
+
+- AirPods connected: within a few seconds the levels move in steps of 1 %, and "Noise control" shows under them. Changing it changes the mode, and changing the mode on the buds moves the choice. If not, the terminal says why the channel failed (`btmanage: AAP to …`). The kernel may need the channel at a security level the socket does not ask for yet (`BT_SECURITY`); LibrePods on Linux is the place to compare.
+- The console: GATT on a Bluetooth LE mouse (connect lists the characteristics, read 2A19, subscribe to it), RFCOMM channel 1 on a serial module with AT, raw AAP on L2CAP 0x1001. Notifications come through `bluetoothctl`, whose lines are shown as it prints them; the stripping of its colours and prompt is written from memory of its output.
+- RFCOMM needs the channel number: there is no SDP lookup yet, so a service that is not on channel 1 has to be found with `sdptool browse` or similar.
+
 ## Devices
 
 - Remove a pairing from the application (`Adapter1.RemoveDevice`).
@@ -24,7 +32,8 @@ The reading of `busctl --json` is tested against a sample written from BlueZ's d
 
 ## Beyond what Windows can do
 
-- AAP over L2CAP for AirPods: noise control, conversation awareness, ear detection. BlueZ lets an application open the channel.
+- AAP: conversation awareness and ear detection. Levels and noise control are done (0.4.0).
+- The console: an SDP lookup of RFCOMM channels by service UUID, and HFP AT commands to a headset.
 - The audio codec in use, from PipeWire or PulseAudio.
 
 ## Updates and distribution

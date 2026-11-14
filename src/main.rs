@@ -9,7 +9,10 @@
 // No console window next to the preview on Windows.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod aap;
 mod bluez;
+mod btsocket;
+mod console;
 mod demo;
 mod share;
 #[cfg(target_os = "linux")]
@@ -23,6 +26,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use btmanage_core::Hub;
+use btmanage_core::apple::aap::NoiseMode;
 use btmanage_core::hub::{CellView, DeviceView, HubSnapshot, Origin, Role};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
@@ -56,23 +60,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = AppWindow::new()?;
     let hub: SharedHub = Arc::default();
     let paths: Paths = Arc::default();
+    // The channels of Apple's accessory protocol to connected AirPods.
+    let links = aap::Links::default();
     if !demo {
-        read_bluez(&hub, &paths);
+        read_bluez(&hub, &paths, &links);
     }
 
-    // The devices on the list under the featured one, for its buttons: identifier and
-    // whether connected, in the order shown.
-    let rows: Rc<RefCell<Vec<(String, bool)>>> = Rc::default();
-    let acting = Rc::clone(&rows);
+    let view: Rc<RefCell<View>> = Rc::default();
+    let acting = Rc::clone(&view);
     let acting_paths = Arc::clone(&paths);
     window.on_device_action(move |index| {
         let row = usize::try_from(index)
             .ok()
-            .and_then(|index| acting.borrow().get(index).cloned());
+            .and_then(|index| acting.borrow().rows.get(index).cloned());
         if let Some((id, connected)) = row {
             toggle_connection(&acting_paths, &id, !connected);
         }
     });
+
+    let picking = Rc::clone(&view);
+    window.on_noise_pick(move |index| {
+        let mut view = picking.borrow_mut();
+        let mode = usize::try_from(index)
+            .ok()
+            .and_then(|index| view.noise_modes.get(index).copied());
+        let (Some(id), Some(mode)) = (view.featured.clone(), mode) else {
+            return;
+        };
+        if !links.set_noise(&id, mode) {
+            eprintln!("btmanage: the noise mode did not reach {id}");
+            // The next redraw shows the mode in effect again.
+            view.noise_shown = None;
+        }
+    });
+
+    // The developer console, made on first use.
+    let console_window: Rc<RefCell<Option<ConsoleWindow>>> = Rc::default();
+    let console_hub = Arc::clone(&hub);
+    let console_paths = Arc::clone(&paths);
+    window.on_open_console(move || console::open(&console_window, &console_hub, &console_paths));
 
     // Once a second: feed the demo data if asked to, then redraw. The redraw
     // also moves the "updated … ago" text on.
@@ -94,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 hub.snapshot(now)
             };
-            render(&window, &snapshot, &rows);
+            render(&window, &snapshot, &mut view.borrow_mut());
         }
     };
     tick();
@@ -113,11 +139,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Reads BlueZ every two seconds in the background, with a discovery running,
-/// and feeds what it finds to the hub.
+/// feeds what it finds to the hub, and keeps the channels of Apple's
+/// accessory protocol open to connected AirPods.
 #[cfg(target_os = "linux")]
-fn read_bluez(hub: &SharedHub, paths: &Paths) {
+fn read_bluez(hub: &SharedHub, paths: &Paths, links: &aap::Links) {
     let hub = Arc::clone(hub);
     let paths = Arc::clone(paths);
+    let links = links.clone();
     std::thread::spawn(move || {
         let _scan = bluez::Scan::start();
         let mut seen = HashMap::new();
@@ -128,13 +156,14 @@ fn read_bluez(hub: &SharedHub, paths: &Paths) {
                 .map(|item| (item.device.id.clone(), item.path.clone()))
                 .collect();
             bluez::feed(&mut lock(&hub), &found, &mut seen, now_ms());
+            links.keep(&hub, &found);
             std::thread::sleep(Duration::from_secs(2));
         }
     });
 }
 
 #[cfg(not(target_os = "linux"))]
-fn read_bluez(_hub: &SharedHub, _paths: &Paths) {}
+fn read_bluez(_hub: &SharedHub, _paths: &Paths, _links: &aap::Links) {}
 
 /// Connects or disconnects a paired device, away from the window's thread.
 #[cfg(target_os = "linux")]
@@ -214,13 +243,54 @@ fn quit_on_close(window: &AppWindow) {
     });
 }
 
+/// What the window shows that its buttons act on.
+#[derive(Default)]
+struct View {
+    /// The devices on the list under the featured one: identifier and
+    /// whether connected, in the order shown.
+    rows: Vec<(String, bool)>,
+    /// The featured device, and the noise modes it offers in the order shown.
+    featured: Option<String>,
+    noise_modes: Vec<NoiseMode>,
+    /// The mode in effect when last shown. The choice is set again only when
+    /// that changes, so a choice being made is not undone by the next redraw.
+    noise_shown: Option<Option<NoiseMode>>,
+}
+
+fn noise_label(mode: NoiseMode) -> &'static str {
+    match mode {
+        NoiseMode::Off => "Off",
+        NoiseMode::NoiseCancellation => "Noise cancellation",
+        NoiseMode::Transparency => "Transparency",
+        NoiseMode::Adaptive => "Adaptive",
+    }
+}
+
 /// Shows the hub's list: the device in use with each of its batteries at the
 /// top, the others under it, each with a button where it can be connected.
-fn render(window: &AppWindow, snapshot: &HubSnapshot, rows: &RefCell<Vec<(String, bool)>>) {
+fn render(window: &AppWindow, snapshot: &HubSnapshot, view: &mut View) {
     let featured = snapshot
         .devices
         .iter()
         .find(|device| (device.connected || device.nearby) && !device.cells.is_empty());
+
+    let modes = featured.map(|device| device.noise_modes.clone()).unwrap_or_default();
+    let mode = featured.and_then(|device| device.noise_mode);
+    if modes != view.noise_modes {
+        let labels: Vec<SharedString> = modes.iter().map(|mode| noise_label(*mode).into()).collect();
+        window.set_noise_modes(ModelRc::new(VecModel::from(labels)));
+        view.noise_modes = modes;
+        view.noise_shown = None;
+    }
+    if view.noise_shown != Some(mode) {
+        let index = mode
+            .and_then(|mode| view.noise_modes.iter().position(|offered| *offered == mode))
+            .and_then(|index| i32::try_from(index).ok())
+            .unwrap_or(-1);
+        window.set_noise_current(index);
+        view.noise_shown = Some(mode);
+    }
+    view.featured = featured.map(|device| device.id.clone());
 
     match featured {
         Some(device) => {
@@ -244,7 +314,7 @@ fn render(window: &AppWindow, snapshot: &HubSnapshot, rows: &RefCell<Vec<(String
         .filter(|device| featured.is_none_or(|shown| shown.id != device.id))
         .take(MAX_OTHERS)
         .collect();
-    *rows.borrow_mut() = others
+    view.rows = others
         .iter()
         .map(|device| (device.id.clone(), device.connected))
         .collect();

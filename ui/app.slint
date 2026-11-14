@@ -1,4 +1,4 @@
-import { Palette, Button, CheckBox, LineEdit } from "std-widgets.slint";
+import { Palette, Button, CheckBox, ComboBox, LineEdit, TextEdit } from "std-widgets.slint";
 
 // One battery: an earbud, the case, or a whole pair of headphones.
 export struct CellData {
@@ -114,6 +114,14 @@ export component AppWindow inherits Window {
     callback share-send-text();
     callback share-send-file();
 
+    // Noise control of the headphones on top, over Apple's accessory protocol:
+    // the modes they offer, and the one in effect (-1 while not known).
+    in property <[string]> noise-modes;
+    in-out property <int> noise-current: -1;
+    callback noise-pick(int);
+
+    callback open-console();
+
     // The panel has one width, like the flyout of the Windows application.
     out property <length> panel-width: 360px;
 
@@ -151,6 +159,23 @@ export component AppWindow inherits Window {
             for cell in root.cells: Cell {
                 data: cell;
                 width: (root.panel-width - 2 * 16px - 2 * 12px) / 3;
+            }
+        }
+
+        if root.has-device && root.noise-modes.length > 0: HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: "Noise control";
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            ComboBox {
+                model: root.noise-modes;
+                current-index <=> root.noise-current;
+                selected => {
+                    root.noise-pick(self.current-index);
+                }
             }
         }
 
@@ -350,6 +375,253 @@ export component AppWindow inherits Window {
                 wrap: word-wrap;
                 color: Palette.foreground.with-alpha(0.8);
             }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
+            Rectangle {
+                height: 1px;
+                background: Palette.foreground.with-alpha(0.1);
+            }
+
+            console-link := TouchArea {
+                height: 20px;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.open-console();
+                }
+                Text {
+                    width: 100%;
+                    text: "Developer console";
+                    vertical-alignment: center;
+                    color: console-link.has-hover ? Palette.foreground : Palette.foreground.with-alpha(0.6);
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+}
+
+component FieldLabel inherits Text {
+    color: Palette.foreground.with-alpha(0.6);
+    font-size: 12px;
+}
+
+// The developer console: raw traffic with one device. Filled in by src/console.rs.
+export component ConsoleWindow inherits Window {
+    // "Name  AA:BB:CC:DD:EE:FF", the connected devices first.
+    in property <[string]> devices;
+    in-out property <int> device-index;
+    // 0 GATT, 1 RFCOMM, 2 L2CAP.
+    in-out property <int> way-index;
+    // "None", then the ready commands of the way.
+    in property <[string]> templates;
+    in-out property <int> template-index;
+    // "2A19 · read, notify", after connecting over GATT.
+    in property <[string]> characteristics;
+    in-out property <string> target;
+    in-out property <string> data;
+    in-out property <bool> hex;
+    // 0 none, 1 CR, 2 CR LF, 3 LF.
+    in-out property <int> ending-index;
+    in property <string> status;
+    // Newest first.
+    in property <string> output;
+    callback refresh-devices();
+    callback connect();
+    callback disconnect();
+    callback send();
+    callback read();
+    callback subscribe();
+    callback clear();
+    callback way-changed(int);
+    callback template-picked(int);
+    callback characteristic-picked(int);
+
+    title: "btManage console";
+    preferred-width: 640px;
+    preferred-height: 720px;
+    background: Palette.background;
+    default-font-size: 14px;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        VerticalLayout {
+            spacing: 4px;
+            FieldLabel {
+                text: "Device";
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                ComboBox {
+                    model: root.devices;
+                    current-index <=> root.device-index;
+                    horizontal-stretch: 1;
+                }
+
+                Button {
+                    text: "Refresh";
+                    clicked => {
+                        root.refresh-devices();
+                    }
+                }
+
+                ComboBox {
+                    model: ["GATT", "RFCOMM", "L2CAP"];
+                    current-index <=> root.way-index;
+                    selected => {
+                        root.way-changed(self.current-index);
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                FieldLabel {
+                    text: root.status;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                Button {
+                    text: "Connect";
+                    primary: true;
+                    clicked => {
+                        root.connect();
+                    }
+                }
+
+                Button {
+                    text: "Disconnect";
+                    clicked => {
+                        root.disconnect();
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 4px;
+            FieldLabel {
+                text: "Ready command";
+            }
+
+            ComboBox {
+                model: root.templates;
+                current-index <=> root.template-index;
+                selected => {
+                    root.template-picked(self.current-index);
+                }
+            }
+        }
+
+        if root.way-index == 0: VerticalLayout {
+            spacing: 4px;
+            FieldLabel {
+                text: root.characteristics.length > 0 ? "Characteristics of the device" : "Characteristics: listed after connecting";
+            }
+
+            if root.characteristics.length > 0: ComboBox {
+                model: root.characteristics;
+                selected => {
+                    root.characteristic-picked(self.current-index);
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 4px;
+            FieldLabel {
+                text: root.way-index == 0 ? "Characteristic: 2A19 or a full UUID"
+                    : root.way-index == 1 ? "Channel, 1 to 30"
+                    : "PSM: 0x1001 for Apple's accessory protocol";
+            }
+
+            LineEdit {
+                text <=> root.target;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 4px;
+            FieldLabel {
+                text: "Data";
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    text <=> root.data;
+                    placeholder-text: "Text, or bytes such as 04 00 0F with Hex on";
+                    horizontal-stretch: 1;
+                    accepted => {
+                        root.send();
+                    }
+                }
+
+                CheckBox {
+                    text: "Hex";
+                    checked <=> root.hex;
+                }
+
+                ComboBox {
+                    model: ["No ending", "CR", "CR LF", "LF"];
+                    current-index <=> root.ending-index;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Button {
+                text: "Send";
+                clicked => {
+                    root.send();
+                }
+            }
+
+            if root.way-index == 0: Button {
+                text: "Read";
+                clicked => {
+                    root.read();
+                }
+            }
+
+            if root.way-index == 0: Button {
+                text: "Subscribe";
+                clicked => {
+                    root.subscribe();
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Exchange";
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Button {
+                text: "Clear";
+                clicked => {
+                    root.clear();
+                }
+            }
+        }
+
+        TextEdit {
+            text: root.output;
+            read-only: true;
+            wrap: word-wrap;
+            font-size: 12px;
+            vertical-stretch: 1;
         }
     }
 }

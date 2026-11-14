@@ -1,7 +1,7 @@
 [package]
 name = "btmanage-linux"
 description = "btManage for Linux: tray icon and battery panel for wireless earbuds"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "Apache-2.0"
 publish = false
@@ -30,3 +30,5 @@ slint-build = "1.18.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { version = "0.3.7", features = ["blocking"] }
+# Bluetooth sockets: L2CAP for Apple's accessory protocol, RFCOMM for the console.
+libc = "0.2.191"

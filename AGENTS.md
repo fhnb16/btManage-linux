@@ -37,4 +37,5 @@ The Linux-only modules do not compile on Windows. To type-check one without a Li
 
 - BlueZ: `src/bluez.rs`. `busctl --json` gives every object BlueZ keeps; the reading of it is plain Rust and tested on every platform, the processes run on Linux only. A D-Bus library would be better, but adding a crate needs `cargo` to write the lock file; with it at hand, `zbus` is the next step, and its signals would replace the polling.
 - Sharing with other btManage: `src/share.rs`, over the core's `btmanage-share`.
+- Bluetooth sockets (L2CAP, RFCOMM) through `libc`: `src/btsocket.rs`. AAP channels to AirPods: `src/aap.rs`. The developer console: `src/console.rs` and `ConsoleWindow` in `ui/app.slint`. All three compile on Windows with stand-ins that fail, so the preview build type-checks them.
 - New window content: properties on `AppWindow` in `ui/app.slint`, filled in `render` in `src/main.rs`.

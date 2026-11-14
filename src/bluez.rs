@@ -35,6 +35,72 @@ pub struct Found {
     /// Apple manufacturer data, and Fast Pair service data, as last heard.
     pub apple: Option<Vec<u8>>,
     pub fast_pair: Option<Vec<u8>>,
+    /// An Apple accessory: it offers the service of Apple's accessory
+    /// protocol, or its maker is Apple.
+    pub accessory: bool,
+}
+
+/// The service AirPods and Beats offer for Apple's accessory protocol (AAP).
+const ACCESSORY_UUID: &str = "74ec2172-0bad-4d01-8f77-997b2be0722a";
+
+/// One GATT characteristic of a device.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Characteristic {
+    /// D-Bus object path, for reading and writing it.
+    pub path: String,
+    /// The full UUID, in lower case.
+    pub uuid: String,
+    /// What it allows: "read", "write", "notify" and so on.
+    pub flags: Vec<String>,
+}
+
+/// The GATT characteristics BlueZ lists under a device, from the same answer
+/// as [`parse`], in the order of their paths.
+pub fn characteristics(answer: &Value, device_path: &str) -> Vec<Characteristic> {
+    let Some(objects) = answer
+        .get("data")
+        .and_then(|data| data.get(0))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    let prefix = format!("{device_path}/");
+    let mut found: Vec<Characteristic> = objects
+        .iter()
+        .filter(|(path, _)| path.starts_with(&prefix))
+        .filter_map(|(path, interfaces)| {
+            let properties = interfaces.get("org.bluez.GattCharacteristic1")?;
+            let uuid = property(properties, "UUID")?.as_str()?.to_lowercase();
+            let flags = property(properties, "Flags")
+                .and_then(Value::as_array)
+                .map(|flags| {
+                    flags
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            Some(Characteristic {
+                path: path.clone(),
+                uuid,
+                flags,
+            })
+        })
+        .collect();
+    found.sort_by(|a, b| a.path.cmp(&b.path));
+    found
+}
+
+/// The bytes of the answer of `ReadValue`: `{"type": "ay", "data": [[…]]}`.
+pub fn read_answer(answer: &Value) -> Option<Vec<u8>> {
+    answer
+        .get("data")?
+        .get(0)?
+        .as_array()?
+        .iter()
+        .map(|byte| byte.as_u64().and_then(|byte| u8::try_from(byte).ok()))
+        .collect()
 }
 
 /// Reads the answer of `busctl --json=short call org.bluez /
@@ -81,10 +147,11 @@ fn device(path: &str, interfaces: &Value) -> Option<Found> {
         (true, false) => Transport::Classic,
         _ => Transport::Le,
     };
-    let services = property(properties, "UUIDs")
+    let uuids: Vec<&str> = property(properties, "UUIDs")
         .and_then(Value::as_array)
-        .map(|uuids| uuids.iter().filter_map(Value::as_str).filter_map(short_uuid).collect())
+        .map(|uuids| uuids.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
+    let services = uuids.iter().copied().filter_map(short_uuid).collect();
     let (vendor_source, vendor_id, product_id) = property(properties, "Modalias")
         .and_then(Value::as_str)
         .and_then(modalias)
@@ -107,6 +174,10 @@ fn device(path: &str, interfaces: &Value) -> Option<Found> {
         let key = format!("0000{FAST_PAIR:04x}{BASE_UUID_TAIL}");
         data.get(key).and_then(bytes)
     });
+    let accessory = uuids
+        .iter()
+        .any(|uuid| uuid.eq_ignore_ascii_case(ACCESSORY_UUID))
+        || (vendor_source == Some(1) && vendor_id == Some(APPLE));
 
     Some(Found {
         path: path.to_owned(),
@@ -129,6 +200,7 @@ fn device(path: &str, interfaces: &Value) -> Option<Found> {
         rssi,
         apple,
         fast_pair,
+        accessory,
     })
 }
 
@@ -204,13 +276,40 @@ pub fn feed(hub: &mut Hub, found: &[Found], seen: &mut HashMap<String, (i16, Vec
     }
 }
 
+/// A line `bluetoothctl` printed, without its colours and prompt.
+fn plain(line: &str) -> String {
+    let mut text = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            // An escape sequence: ESC, '[', parameters, then a letter.
+            '\u{1b}' => {
+                for c in chars.by_ref() {
+                    if c.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            // The prompt marks: \x01 and \x02 around invisible parts.
+            '\u{1}' | '\u{2}' | '\r' => {}
+            _ => text.push(c),
+        }
+    }
+    // "[My device]# " and "[bluetooth]# " before what was printed.
+    let text = match text.find("]# ") {
+        Some(end) if text.starts_with('[') => &text[end + 3..],
+        _ => text.as_str(),
+    };
+    text.trim().to_owned()
+}
+
 #[cfg(target_os = "linux")]
-pub use system::{Scan, connect, read};
+pub use system::{Notify, Scan, connect, gatt_read, gatt_write, objects, read};
 
 /// The processes: the discovery and the reading.
 #[cfg(target_os = "linux")]
 mod system {
-    use std::io::Write;
+    use std::io::{BufRead, BufReader, Write};
     use std::process::{Child, Command, Stdio};
 
     use serde_json::Value;
@@ -254,16 +353,103 @@ mod system {
 
     /// Everything BlueZ knows now, or nothing when it does not answer.
     pub fn read() -> Vec<Found> {
+        objects().map_or_else(Vec::new, |answer| super::parse(&answer))
+    }
+
+    /// The answer of `GetManagedObjects`: every object BlueZ keeps.
+    pub fn objects() -> Option<Value> {
         let output = Command::new("busctl")
             .args(["--system", "--json=short", "call", "org.bluez", "/"])
             .args(["org.freedesktop.DBus.ObjectManager", "GetManagedObjects"])
-            .output();
-        let Ok(output) = output else {
-            return Vec::new();
-        };
-        match serde_json::from_slice::<Value>(&output.stdout) {
-            Ok(answer) => super::parse(&answer),
-            Err(_) => Vec::new(),
+            .output()
+            .ok()?;
+        serde_json::from_slice::<Value>(&output.stdout).ok()
+    }
+
+    /// Runs `busctl` with the arguments; its output, or what it said went wrong.
+    fn busctl(arguments: &[String]) -> Result<Vec<u8>, String> {
+        let output = Command::new("busctl")
+            .args(["--system", "--json=short", "call", "org.bluez"])
+            .args(arguments)
+            .output()
+            .map_err(|error| format!("busctl: {error}"))?;
+        if output.status.success() {
+            Ok(output.stdout)
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+        }
+    }
+
+    /// Reads a GATT characteristic.
+    pub fn gatt_read(path: &str) -> Result<Vec<u8>, String> {
+        let output = busctl(&[
+            path.to_owned(),
+            "org.bluez.GattCharacteristic1".to_owned(),
+            "ReadValue".to_owned(),
+            "a{sv}".to_owned(),
+            "0".to_owned(),
+        ])?;
+        let answer: Value =
+            serde_json::from_slice(&output).map_err(|error| format!("busctl: {error}"))?;
+        super::read_answer(&answer).ok_or_else(|| "BlueZ gave no bytes".to_owned())
+    }
+
+    /// Writes a GATT characteristic; BlueZ picks the kind of write its flags allow.
+    pub fn gatt_write(path: &str, data: &[u8]) -> Result<(), String> {
+        let mut arguments = vec![
+            path.to_owned(),
+            "org.bluez.GattCharacteristic1".to_owned(),
+            "WriteValue".to_owned(),
+            "aya{sv}".to_owned(),
+            data.len().to_string(),
+        ];
+        arguments.extend(data.iter().map(u8::to_string));
+        arguments.push("0".to_owned());
+        busctl(&arguments).map(|_| ())
+    }
+
+    /// Notifications of a GATT characteristic, through `bluetoothctl`: BlueZ
+    /// sends them only while the program that asked stays on the bus, which
+    /// `busctl` does not. They stop when this is dropped.
+    pub struct Notify(Child);
+
+    impl Notify {
+        /// Starts the notifications; every line `bluetoothctl` prints goes to `line`.
+        pub fn start(path: &str, line: impl Fn(String) + Send + 'static) -> Result<Notify, String> {
+            let mut child = Command::new("bluetoothctl")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|error| format!("bluetoothctl: {error}"))?;
+            let commands = format!("menu gatt\nselect-attribute {path}\nnotify on\n");
+            child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| "bluetoothctl: no input".to_owned())?
+                .write_all(commands.as_bytes())
+                .map_err(|error| format!("bluetoothctl: {error}"))?;
+            if let Some(stdout) = child.stdout.take() {
+                std::thread::spawn(move || {
+                    for text in BufReader::new(stdout).lines().map_while(Result::ok) {
+                        let text = super::plain(&text);
+                        if !text.is_empty() {
+                            line(text);
+                        }
+                    }
+                });
+            }
+            Ok(Notify(child))
+        }
+    }
+
+    impl Drop for Notify {
+        fn drop(&mut self) {
+            if let Some(stdin) = self.0.stdin.as_mut() {
+                let _ = stdin.write_all(b"notify off\nquit\n");
+            }
+            let _ = self.0.kill();
+            let _ = self.0.wait();
         }
     }
 
@@ -364,6 +550,53 @@ mod tests {
         // The same advertisement again is not fed again.
         feed(&mut hub, &found, &mut seen, 2_000);
         assert_eq!(seen.len(), 1);
+    }
+
+    #[test]
+    fn apple_accessories_are_told_apart() {
+        let found = parse(&sample());
+        assert!(!found[0].accessory);
+        assert!(found[1].accessory);
+    }
+
+    #[test]
+    fn characteristics_of_a_device_are_listed() {
+        let answer = serde_json::json!({
+            "type": "a{oa{sa{sv}}}",
+            "data": [{
+                "/org/bluez/hci0/dev_DC_2C_26_00_06_8D/service0010/char0011": {
+                    "org.bluez.GattCharacteristic1": {
+                        "UUID": { "type": "s", "data": "00002A19-0000-1000-8000-00805F9B34FB" },
+                        "Flags": { "type": "as", "data": ["read", "notify"] }
+                    }
+                },
+                "/org/bluez/hci0/dev_DC_2C_26_00_06_8D/service0010": {
+                    "org.bluez.GattService1": {
+                        "UUID": { "type": "s", "data": "0000180f-0000-1000-8000-00805f9b34fb" }
+                    }
+                },
+                "/org/bluez/hci0/dev_11_22_33_44_55_66/service0010/char0011": {
+                    "org.bluez.GattCharacteristic1": {
+                        "UUID": { "type": "s", "data": "00002a00-0000-1000-8000-00805f9b34fb" }
+                    }
+                }
+            }]
+        });
+        let found = characteristics(&answer, "/org/bluez/hci0/dev_DC_2C_26_00_06_8D");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].uuid, "00002a19-0000-1000-8000-00805f9b34fb");
+        assert_eq!(found[0].flags, ["read", "notify"]);
+    }
+
+    #[test]
+    fn read_values_and_bluetoothctl_lines_are_read() {
+        let answer = serde_json::json!({ "type": "ay", "data": [[100, 7]] });
+        assert_eq!(read_answer(&answer), Some(vec![100, 7]));
+        assert_eq!(
+            plain("\u{1b}[0;94m[My mouse]\u{1b}[0m# [CHG] Attribute Value: 64"),
+            "[CHG] Attribute Value: 64"
+        );
+        assert_eq!(plain("  64 07   d.  "), "64 07   d.");
     }
 
     #[test]

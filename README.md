@@ -6,6 +6,10 @@ A tray application that shows the battery levels of Bluetooth devices. Written i
 
 BlueZ is reached through the system's own `busctl` and `bluetoothctl`, which every distribution with BlueZ has; the application keeps a discovery running while it is open.
 
+Connected AirPods and Beats are also reached over AAP, Apple's accessory protocol, on an L2CAP channel the application opens itself (`src/aap.rs`, `src/btsocket.rs`): levels in steps of 1 %, and noise control under the levels.
+
+The developer console ("Developer console" at the bottom of the panel, `src/console.rs`) sends data of your own to a device and lists what comes back: GATT through BlueZ (the characteristics of the device, read, write, subscribe), an RFCOMM channel by its number (serial ports, AT commands), an L2CAP channel by its PSM (`0x1001` is AAP). Ready commands fill the fields. On Windows the window opens as a preview and does nothing.
+
 Sharing with other btManage applications on the same network works through the core's `btmanage-share`, as on Windows and Android: the panel shows the pairing code of this computer, pairs with another device by its code, lists the devices heard, sends text, and sends a file given by its path. Items come only from paired devices. Received files go to `~/Downloads/btManage`.
 
 ## Build

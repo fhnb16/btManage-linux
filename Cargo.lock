@@ -562,11 +562,12 @@ dependencies = [
 
 [[package]]
 name = "btmanage-linux"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "btmanage-core",
  "btmanage-share",
  "ksni",
+ "libc",
  "serde_json",
  "slint",
  "slint-build",
